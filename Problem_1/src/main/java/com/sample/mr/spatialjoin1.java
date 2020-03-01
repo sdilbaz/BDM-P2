@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.gson.Gson;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
@@ -18,8 +19,13 @@ public class spatialjoin1 {
     public static class SpatialMapper extends Mapper<LongWritable, Text, Text, Text> {
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
+            Gson gson = new Gson();
+            String W_serial = conf.get("W");
+            int[] W =  gson.fromJson(W_serial,int[].class);
             String[] data = value.toString().split(",");
-            context.write(new Text(),new Text(value.toString()));
+            if (data.length!=2 || (Integer.parseInt(data[0])>=W[0] && Integer.parseInt(data[0])<=W[2] && Integer.parseInt(data[1])>=W[1]  && Integer.parseInt(data[1])<=W[3] )){
+                context.write(new Text(),new Text(value.toString()));
+            }
         }
     }
 
@@ -60,13 +66,16 @@ public class spatialjoin1 {
 
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
+        Gson gson = new Gson();
+        int[] W= new int[]{1,3,3,20};
+        conf.set("W",gson.toJson(W));
         Job job = Job.getInstance(conf, "spatialJoin");
+        job.setNumReduceTasks(1);
         job.setJarByClass(spatialjoin1.class);
         job.setMapperClass(SpatialMapper.class);
         job.setReducerClass(SpatialReducer.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
-        FileInputFormat.addInputPath(job, new Path(args[0]));
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
         System.exit(job.waitForCompletion(true) ? 0 : 1);
