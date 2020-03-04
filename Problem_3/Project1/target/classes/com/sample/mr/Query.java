@@ -23,6 +23,43 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class Query {
 
+    public static class InitMapper
+            extends Mapper<Object, Text, IntWritable, Text>{
+        public void map(Object key, Text value, Context context
+        ) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            String prob_str = conf.get("probability");
+            String cents_str = conf.get("number_cents");
+            int number_of_centers = Integer.valueOf(cents_str);
+            float prob = Float.valueOf(prob_str);
+            if (Math.random()<prob){
+                int index = (int) Math.floor(Math.random()*number_of_centers);
+                context.write(new IntWritable(index),new Text(value));
+            }
+        }
+    }
+
+    public static class InitReducer
+            extends Reducer<IntWritable,Text,IntWritable,Text> {
+        private Text result = new Text();
+
+        public void reduce(IntWritable key, Iterable<Text> values,
+                           Context context
+        ) throws IOException, InterruptedException {
+            float[] new_center = new float[] {0,0};
+            float number_of_points=0;
+            for (Text val : values) {
+                String[] data = val.toString().split(",");
+                new_center[0]+=Float.valueOf(data[0]);
+                new_center[1]+=Float.valueOf(data[1]);
+                number_of_points+=1;
+            }
+            String center= new_center[0]/number_of_points +","+ new_center[1]/number_of_points;
+            result.set(center);
+            context.write(key, result);
+        }
+    }
+
     public static class KMeansMapper
             extends Mapper<Object, Text, IntWritable, Text>{
         Gson gson = new Gson();
@@ -121,6 +158,42 @@ public class Query {
         return init;
     }
 
+    public static float[][] smart_init(String filter_prob, int number_of_points, String input, String output) throws IOException, ClassNotFoundException, InterruptedException {
+        clear_output();
+        Configuration conf = new Configuration();
+        String number_cents= String.valueOf(number_of_points);
+        conf.set("probability", filter_prob);
+        conf.set("number_cents", number_cents);
+        Job job = Job.getInstance(conf, "k_means_init");
+        job.setJarByClass(Query.class);
+        job.setMapperClass(InitMapper.class);
+        job.setReducerClass(InitReducer.class);
+        job.setOutputKeyClass(IntWritable.class);
+        job.setOutputValueClass(Text.class);
+        FileInputFormat.addInputPath(job, new Path(input));
+        FileOutputFormat.setOutputPath(job, new Path(output));
+        job.waitForCompletion(true);
+
+        float[][] init = random_init(number_of_points,100);
+        String dir_path=System.getProperty("user.dir");
+
+        File file = new File(dir_path+"/output/part-r-00000");
+
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String st;
+            while ((st = br.readLine()) != null){
+                String[] entries = st.split("\t");
+                String[] center_str=entries[1].split(",");
+                init[Integer.valueOf(entries[0])][0]=Float.valueOf(center_str[0]);
+                init[Integer.valueOf(entries[0])][1]=Float.valueOf(center_str[1]);
+            }
+        } catch (IOException e) {
+        }
+        clear_output();
+        return init;
+    }
+
     public static int clear_output(){
         String dir_path=System.getProperty("user.dir");
         try {
@@ -173,14 +246,16 @@ public class Query {
         return inertia;
     }
 
+
     public static void main(String[] args) throws Exception {
         int number_of_centers=10;
         int number_of_iterations=10;
         float current_inertia;
+        String filter_prob = "0.1";
 
         ArrayList<Float> inertias = new ArrayList<Float>();
         JSONObject centers;
-        float[][] initial_points=random_init(number_of_centers,100);//{{0,0},{10,10}};
+        float[][] initial_points=smart_init(filter_prob,number_of_centers,args[0],args[1]);
 
         Gson gson = new Gson();
         clear_output();
@@ -228,5 +303,6 @@ public class Query {
         System.out.println(Arrays.deepToString(initial_points));
         System.out.println("Inertia over time:");
         System.out.println(Arrays.toString(inertias.toArray()));
+
     }
 }
