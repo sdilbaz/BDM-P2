@@ -1,12 +1,16 @@
 package com.sample.mr;
 
-import java.io.IOException;
+import org.json.simple.JSONObject;
+
+import java.io.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
 import java.util.StringTokenizer;
 
 import com.google.gson.Gson;
 import javafx.util.Pair;
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
@@ -57,8 +61,8 @@ public class Query {
                 inertia+=Float.valueOf(data[2]);
                 number_of_points+=1;
             }
-            String center=String.valueOf(new_center[0])+","+String.valueOf(new_center[1]);
-            result.set(center+","+String.valueOf(inertia)+","+String.valueOf(number_of_points));
+            String center= new_center[0] +","+ new_center[1];
+            result.set(center+","+ inertia +","+ number_of_points);
             context.write(key, result);
         }
     }
@@ -80,8 +84,8 @@ public class Query {
                 inertia+=Float.valueOf(data[2]);
                 number_of_points+=Float.valueOf(data[3]);
             }
-            String center=String.valueOf(new_center[0]/number_of_points)+","+String.valueOf(new_center[1]/number_of_points);
-            result.set(center+","+String.valueOf(inertia));
+            String center= new_center[0] / number_of_points +","+ new_center[1] / number_of_points;
+            result.set(center+","+ inertia);
             context.write(key, result);
         }
     }
@@ -116,22 +120,113 @@ public class Query {
         }
         return init;
     }
+
+    public static int clear_output(){
+        String dir_path=System.getProperty("user.dir");
+        try {
+            FileUtils.deleteDirectory(new File(dir_path+"/output"));
+            return 1;
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    public static JSONObject extract_centers() throws IOException {
+        JSONObject centers = new JSONObject();
+        String dir_path=System.getProperty("user.dir");
+
+        File file = new File(dir_path+"/output/part-r-00000");
+
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String st;
+            while ((st = br.readLine()) != null){
+                String[] entries = st.split("\t");
+                String[] center_str=entries[1].split(",");
+                float[] center = new float[2];
+                center[0]=Float.valueOf(center_str[0]);
+                center[1]=Float.valueOf(center_str[1]);
+
+                centers.put(Integer.valueOf(entries[0]),center);
+            }
+        } catch (IOException e) {
+        }
+        return centers;
+    }
+
+    public static float extract_inertia() {
+        float inertia=0;
+        String dir_path=System.getProperty("user.dir");
+
+        File file = new File(dir_path+"/output/part-r-00000");
+
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String st;
+            while ((st = br.readLine()) != null){
+                String[] entries = st.split("\t");
+                String[] center_str=entries[1].split(",");
+                inertia+=Float.valueOf(center_str[2]);
+            }
+        } catch (IOException e) {
+        }
+        return inertia;
+    }
+
     public static void main(String[] args) throws Exception {
-        Gson gson = new Gson();
+        int number_of_centers=10;
         int number_of_iterations=10;
+        float current_inertia;
+
+        ArrayList<Float> inertias = new ArrayList<Float>();
+        JSONObject centers;
+        float[][] initial_points=random_init(number_of_centers,100);//{{0,0},{10,10}};
+
+        Gson gson = new Gson();
+        clear_output();
         Configuration conf = new Configuration();
-        float[][] initial_points={{0,0},{100,100}};//random_init(10,100);
         String initial_points_str=gson.toJson(initial_points);
-        conf.set("initial_points", initial_points_str);
-        Job job = Job.getInstance(conf, "k_means");
-        job.setJarByClass(Query.class);
-        job.setMapperClass(KMeansMapper.class);
-        job.setCombinerClass(KMeansCombiner.class);
-        job.setReducerClass(KMeansReducer.class);
-        job.setOutputKeyClass(IntWritable.class);
-        job.setOutputValueClass(Text.class);
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        for (int iteration=0;iteration<number_of_iterations;iteration++){
+            System.out.println("Iteration "+ iteration);
+            conf.set("initial_points", initial_points_str);
+            Job job = Job.getInstance(conf, "k_means");
+            job.setJarByClass(Query.class);
+            job.setMapperClass(KMeansMapper.class);
+            job.setCombinerClass(KMeansCombiner.class);
+            job.setReducerClass(KMeansReducer.class);
+            job.setOutputKeyClass(IntWritable.class);
+            job.setOutputValueClass(Text.class);
+            FileInputFormat.addInputPath(job, new Path(args[0]));
+            FileOutputFormat.setOutputPath(job, new Path(args[1]));
+            job.waitForCompletion(true);
+
+            // store centers and inertia
+            centers = extract_centers();
+            current_inertia=extract_inertia();
+            if (inertias.size()!=0 && (inertias.get(inertias.size() - 1)==current_inertia)){
+                System.out.println("k-means converged in "+ iteration +" iterations");
+                break;
+            }
+            inertias.add(current_inertia);
+            for (int center_id=0;center_id<number_of_centers;center_id++){
+                Object temp=centers.get(center_id);
+                if (temp!=null){
+                    float[] current_center=(float[])temp;
+                    initial_points[center_id][0]=current_center[0];
+                    initial_points[center_id][1]=current_center[1];
+                }
+            }
+            initial_points_str=gson.toJson(initial_points);
+            if (!(iteration+1==number_of_iterations)){
+                clear_output();
+            }
+            else {
+                System.out.println("k-means did not converge after "+ number_of_iterations +" iterations");
+            }
+        }
+        System.out.println("Cluster centers:");
+        System.out.println(Arrays.deepToString(initial_points));
+        System.out.println("Inertia over time:");
+        System.out.println(Arrays.toString(inertias.toArray()));
     }
 }
