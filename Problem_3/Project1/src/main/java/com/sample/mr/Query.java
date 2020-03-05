@@ -5,8 +5,6 @@ import org.json.simple.JSONObject;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Random;
-import java.util.StringTokenizer;
 
 import com.google.gson.Gson;
 import javafx.util.Pair;
@@ -30,8 +28,8 @@ public class Query {
             Configuration conf = context.getConfiguration();
             String prob_str = conf.get("probability");
             String cents_str = conf.get("number_cents");
-            int number_of_centers = Integer.valueOf(cents_str);
-            float prob = Float.valueOf(prob_str);
+            int number_of_centers = Integer.parseInt(cents_str);
+            float prob = Float.parseFloat(prob_str);
             if (Math.random()<prob){
                 int index = (int) Math.floor(Math.random()*number_of_centers);
                 context.write(new IntWritable(index),new Text(value));
@@ -50,8 +48,8 @@ public class Query {
             float number_of_points=0;
             for (Text val : values) {
                 String[] data = val.toString().split(",");
-                new_center[0]+=Float.valueOf(data[0]);
-                new_center[1]+=Float.valueOf(data[1]);
+                new_center[0]+=Float.parseFloat(data[0]);
+                new_center[1]+=Float.parseFloat(data[1]);
                 number_of_points+=1;
             }
             String center= new_center[0]/number_of_points +","+ new_center[1]/number_of_points;
@@ -93,10 +91,10 @@ public class Query {
             float inertia = 0;
             for (Text val : values) {
                 String[] data = val.toString().split(",");
-                new_center[0]+=Float.valueOf(data[0]);
-                new_center[1]+=Float.valueOf(data[1]);
-                inertia+=Float.valueOf(data[2]);
-                number_of_points+=1;
+                new_center[0]+=Float.parseFloat(data[0]);
+                new_center[1]+=Float.parseFloat(data[1]);
+                inertia+=Float.parseFloat(data[2]);
+                number_of_points+=Float.parseFloat(data[3]);
             }
             String center= new_center[0] +","+ new_center[1];
             result.set(center+","+ inertia +","+ number_of_points);
@@ -116,13 +114,13 @@ public class Query {
             float inertia = 0;
             for (Text val : values) {
                 String[] data = val.toString().split(",");
-                new_center[0]+=Float.valueOf(data[0]);
-                new_center[1]+=Float.valueOf(data[1]);
-                inertia+=Float.valueOf(data[2]);
-                number_of_points+=Float.valueOf(data[3]);
+                new_center[0]+=Float.parseFloat(data[0]);
+                new_center[1]+=Float.parseFloat(data[1]);
+                inertia+=Float.parseFloat(data[2]);
+                number_of_points+=Float.parseFloat(data[3]);
             }
-            String center= new_center[0] / number_of_points +","+ new_center[1] / number_of_points;
-            result.set(center+","+ inertia);
+            String center= (new_center[0] / number_of_points) +","+ (new_center[1] / number_of_points);
+            result.set(center+","+ inertia+","+number_of_points);
             context.write(key, result);
         }
     }
@@ -174,7 +172,7 @@ public class Query {
         FileOutputFormat.setOutputPath(job, new Path(output));
         job.waitForCompletion(true);
 
-        float[][] init = random_init(number_of_points,100);
+        float[][] init = random_init(number_of_points,10000);
         String dir_path=System.getProperty("user.dir");
 
         File file = new File(dir_path+"/output/part-r-00000");
@@ -185,26 +183,24 @@ public class Query {
             while ((st = br.readLine()) != null){
                 String[] entries = st.split("\t");
                 String[] center_str=entries[1].split(",");
-                init[Integer.valueOf(entries[0])][0]=Float.valueOf(center_str[0]);
-                init[Integer.valueOf(entries[0])][1]=Float.valueOf(center_str[1]);
+                init[Integer.parseInt(entries[0])][0]=Float.parseFloat(center_str[0]);
+                init[Integer.parseInt(entries[0])][1]=Float.parseFloat(center_str[1]);
             }
-        } catch (IOException e) {
+        } catch (IOException ignored) {
         }
         clear_output();
         return init;
     }
 
-    public static int clear_output(){
+    public static void clear_output(){
         String dir_path=System.getProperty("user.dir");
         try {
             FileUtils.deleteDirectory(new File(dir_path+"/output"));
-            return 1;
         } catch (IOException e) {
-            return 0;
         }
     }
 
-    public static JSONObject extract_centers() throws IOException {
+    public static JSONObject extract_centers() {
         JSONObject centers = new JSONObject();
         String dir_path=System.getProperty("user.dir");
 
@@ -217,12 +213,12 @@ public class Query {
                 String[] entries = st.split("\t");
                 String[] center_str=entries[1].split(",");
                 float[] center = new float[2];
-                center[0]=Float.valueOf(center_str[0]);
-                center[1]=Float.valueOf(center_str[1]);
+                center[0]=Float.parseFloat(center_str[0]);
+                center[1]=Float.parseFloat(center_str[1]);
 
                 centers.put(Integer.valueOf(entries[0]),center);
             }
-        } catch (IOException e) {
+        } catch (IOException ignored) {
         }
         return centers;
     }
@@ -239,23 +235,26 @@ public class Query {
             while ((st = br.readLine()) != null){
                 String[] entries = st.split("\t");
                 String[] center_str=entries[1].split(",");
-                inertia+=Float.valueOf(center_str[2]);
+                inertia+=Float.parseFloat(center_str[2]);
             }
-        } catch (IOException e) {
+        } catch (IOException ignored) {
         }
         return inertia;
     }
 
 
     public static void main(String[] args) throws Exception {
-        int number_of_centers=10;
+        int number_of_centers=20;
         int number_of_iterations=10;
         float current_inertia;
         String filter_prob = "0.1";
 
-        ArrayList<Float> inertias = new ArrayList<Float>();
+        ArrayList<Float> inertias;
+        inertias = new ArrayList<Float>();
         JSONObject centers;
         float[][] initial_points=smart_init(filter_prob,number_of_centers,args[0],args[1]);
+        //{{(float) 4268.7476,(float) 4845.512}, {(float) 4234.1167,(float) 4829.2954}, {(float) 4255.073,(float) 4851.9497}, {(float) 4278.561,(float) 4826.274}, {(float) 4246.077,(float) 4856.6426}, {(float) 4282.9805,(float) 4844.3105}, {(float) 4292.4106,(float) 4840.826}, {(float) 4287.5,(float) 4843.4976}, {(float) 4265.252,(float) 4842.9917}, {(float) 4267.999,(float) 4849.925}, {(float) 4256.675,(float) 4837.21}, {(float) 4263.205,(float) 4839.4316}, {(float) 4276.2617,(float) 4836.1646}, {(float) 4284.362,(float) 4813.5244}, {(float) 4272.6904,(float) 4823.723}, {(float) 4285.831,(float) 4828.006}, {(float) 4262.362,(float) 4832.6406}, {(float) 4243.9717,(float) 4864.162}, {(float) 4271.266,(float) 4832.21}, {(float) 4271.984,(float) 4837.6997}};
+        //smart_init(filter_prob,number_of_centers,args[0],args[1]);
 
         Gson gson = new Gson();
         clear_output();
@@ -263,8 +262,10 @@ public class Query {
         String initial_points_str=gson.toJson(initial_points);
         for (int iteration=0;iteration<number_of_iterations;iteration++){
             System.out.println("Iteration "+ iteration);
+            System.out.println("Cluster centers:");
+            System.out.println(Arrays.deepToString(initial_points));
             conf.set("initial_points", initial_points_str);
-            Job job = Job.getInstance(conf, "k_means");
+            Job job = Job.getInstance(conf, "k_means_"+iteration);
             job.setJarByClass(Query.class);
             job.setMapperClass(KMeansMapper.class);
             job.setCombinerClass(KMeansCombiner.class);
