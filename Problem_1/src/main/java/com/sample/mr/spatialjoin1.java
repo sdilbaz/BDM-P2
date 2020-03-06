@@ -23,7 +23,9 @@ public class spatialjoin1 {
             String W_serial = conf.get("W");
             int[] W =  gson.fromJson(W_serial,int[].class);
             String[] data = value.toString().split(",");
-            if (data.length!=2 || (Integer.parseInt(data[0])>=W[0] && Integer.parseInt(data[0])<=W[2] && Integer.parseInt(data[1])>=W[1]  && Integer.parseInt(data[1])<=W[3] )){
+            if (W.length == 0){
+                context.write(new Text(),new Text(value.toString()));
+            }else if ((W.length != 0) && (data.length!=2 || (Integer.parseInt(data[0])>=W[0] && Integer.parseInt(data[0])<=W[2] && Integer.parseInt(data[1])>=W[1]  && Integer.parseInt(data[1])<=W[3] ))){
                 context.write(new Text(),new Text(value.toString()));
             }
         }
@@ -67,7 +69,7 @@ public class spatialjoin1 {
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
         Gson gson = new Gson();
-        int[] W= new int[]{1,3,3,20};
+        int[] W= new int[]{0,0,100,100}; //if we want omit W, just delete the content inside {}. i.e. int[] W= new int[]{};
         conf.set("W",gson.toJson(W));
         Job job = Job.getInstance(conf, "spatialJoin");
         job.setNumReduceTasks(1);
